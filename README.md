@@ -87,6 +87,8 @@ node src/server.js
 node src/server.js --add
 ```
 
+> `--add` 授权成功后会继续启动服务（同 `node src/server.js`），无需再手动重启。
+
 ## 5. Web 管理界面
 
 管理界面提供：
@@ -99,6 +101,7 @@ node src/server.js --add
 
 > OAuth 回调默认使用：`http://localhost:<port>/oauth-callback`（`<port>` 取 `AG2API_PORT`，默认 3000）。
 > 若你是在远程机器访问本服务，授权完成后浏览器可能会跳转到 `localhost`，请把地址栏里的 `localhost:<port>` 改成当前服务地址再回车即可。
+> 如果你不方便改地址，也可以直接复制地址栏里的完整回调链接（或仅复制 `code`），粘贴到管理页 “提交” 输入框中完成授权入库。
 
 ## 6. Docker 部署
 
@@ -181,3 +184,4 @@ docker run -d --name antigravity2api \
 
 *   **OAuth 回调打不开**:
     *   授权完成后若跳到 `http://localhost:<port>/oauth-callback`，请把 `localhost:<port>` 改成当前服务地址再访问。
+    *   或者复制地址栏里的完整回调链接（或仅复制 `code`），粘贴到管理页输入框中点击 “提交”。

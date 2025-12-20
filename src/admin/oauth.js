@@ -9,6 +9,10 @@ function nowMs() {
   return Date.now();
 }
 
+function hasUrlScheme(value) {
+  return /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
+}
+
 function escapeHtml(str) {
   return String(str || "")
     .replaceAll("&", "&amp;")
@@ -31,6 +35,47 @@ function resolveServerPort(config) {
 function createState() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return crypto.randomBytes(16).toString("hex");
+}
+
+function parseOAuthInputToParams(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return {};
+
+  const candidates = [raw];
+  if (!hasUrlScheme(raw)) {
+    if (raw.startsWith("/")) candidates.push(`http://localhost${raw}`);
+    if (raw.startsWith("?")) candidates.push(`http://localhost/oauth-callback${raw}`);
+    if (/^localhost(:\d+)?\//i.test(raw)) candidates.push(`http://${raw}`);
+    if (raw.includes("/oauth-callback")) candidates.push(`http://${raw.replace(/^\/+/, "")}`);
+  }
+
+  let params = null;
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate);
+      if (url && url.searchParams) {
+        params = url.searchParams;
+        break;
+      }
+    } catch (e) {}
+  }
+
+  if (!params && (raw.includes("code=") || raw.includes("state=") || raw.includes("error="))) {
+    const q = raw.startsWith("?") ? raw.slice(1) : raw;
+    try {
+      params = new URLSearchParams(q);
+    } catch (e) {}
+  }
+
+  if (!params) return { code: raw };
+
+  const code = params.get("code");
+  const state = params.get("state");
+  const error = params.get("error");
+  const errorDescription = params.get("error_description");
+
+  if (!code && !state && !error) return { code: raw };
+  return { code, state, error, errorDescription };
 }
 
 function cleanupExpiredSessions() {
@@ -142,6 +187,45 @@ async function completeOAuthCallback({ state, code, error, errorDescription, aut
   }
 }
 
+async function completeOAuthFromUserInput({ body, authManager }) {
+  const rawState = typeof body?.state === "string" ? body.state.trim() : "";
+  const rawCode = typeof body?.code === "string" ? body.code.trim() : "";
+  const rawCallbackUrl = typeof body?.callback_url === "string" ? body.callback_url.trim() : "";
+
+  const parsed = parseOAuthInputToParams(rawCallbackUrl);
+  const state = rawState || parsed.state || "";
+  const code = rawCode || parsed.code || "";
+
+  const error = parsed.error;
+  const errorDescription = parsed.errorDescription;
+
+  if (!rawCallbackUrl && !rawCode) {
+    return {
+      success: false,
+      message: "请输入回调链接（含 code/state）或授权码 code",
+      state: state || rawState || "",
+    };
+  }
+
+  if (!state) {
+    return {
+      success: false,
+      message: "缺少 state：请先点击 “OAuth 添加账号” 生成 state，再粘贴回调链接或 code 提交",
+      state: "",
+    };
+  }
+
+  const result = await completeOAuthCallback({
+    state,
+    code,
+    error,
+    errorDescription,
+    authManager,
+  });
+
+  return { ...result, state };
+}
+
 function renderOAuthResultPage({ success, message, state }) {
   const safeMessage = escapeHtml(message);
   const payload = {
@@ -221,5 +305,6 @@ module.exports = {
   startOAuthSession,
   getOAuthStatus,
   completeOAuthCallback,
+  completeOAuthFromUserInput,
   renderOAuthResultPage,
 };

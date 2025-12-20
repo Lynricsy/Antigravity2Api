@@ -12,6 +12,8 @@
     oauthUrl: $("oauthUrl"),
     oauthState: $("oauthState"),
     btnCopyUrl: $("btnCopyUrl"),
+    oauthPaste: $("oauthPaste"),
+    btnSubmitCallback: $("btnSubmitCallback"),
     accountsBody: $("accountsBody"),
     accountsMeta: $("accountsMeta"),
   };
@@ -273,6 +275,39 @@
     }
   }
 
+  async function submitOAuthCallback() {
+    const raw = (els.oauthPaste?.value || "").trim();
+    if (!raw) {
+      setOAuthInfo({ status: "请输入回调链接或授权码 code", url: state.oauth.url, stateId: state.oauth.state });
+      return;
+    }
+
+    setOAuthInfo({ status: "提交授权信息中...", url: state.oauth.url, stateId: state.oauth.state });
+
+    try {
+      const body = { callback_url: raw };
+      if (state.oauth.state) body.state = state.oauth.state;
+      const res = await apiFetch("/admin/api/oauth/complete", { method: "POST", body: JSON.stringify(body) });
+      const data = res.data || {};
+      if (data.state && !state.oauth.state) state.oauth.state = data.state;
+
+      if (data.success) {
+        stopOAuthPolling();
+        setOAuthInfo({ status: `授权成功：${data.message || ""}`, url: state.oauth.url, stateId: state.oauth.state });
+        if (els.oauthPaste) els.oauthPaste.value = "";
+        refreshAccounts();
+      } else {
+        setOAuthInfo({ status: `授权失败：${data.message || ""}`, url: state.oauth.url, stateId: state.oauth.state });
+      }
+    } catch (e) {
+      if (e.status === 401) {
+        setOAuthInfo({ status: "未授权：请先输入正确的 API Key" });
+        return;
+      }
+      setOAuthInfo({ status: `提交失败：${e.message || e}`, url: state.oauth.url, stateId: state.oauth.state });
+    }
+  }
+
   function bindEvents() {
     els.btnSaveKey.addEventListener("click", () => {
       saveApiKey();
@@ -290,6 +325,14 @@
     });
     els.btnAdd.addEventListener("click", startOAuth);
     els.btnCopyUrl.addEventListener("click", copyOAuthUrl);
+    if (els.btnSubmitCallback) {
+      els.btnSubmitCallback.addEventListener("click", submitOAuthCallback);
+    }
+    if (els.oauthPaste) {
+      els.oauthPaste.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submitOAuthCallback();
+      });
+    }
     window.addEventListener("message", handleOAuthMessage);
   }
 

@@ -184,12 +184,14 @@ const server = http.createServer(async (req, res) => {
   await authManager.loadAccounts();
 
   if (isAddFlow) {
-    if (isAddFlow) {
-      log("info", "🚀 Starting flow to add a new account...");
-    }
+    log("info", "🚀 Starting flow to add a new account...");
     const oauthFlow = new OAuthFlow({ authManager, logger: log, rateLimiter: authManager.apiLimiter });
-    oauthFlow.startInteractiveFlow();
-    if (isAddFlow) return;
+    const ok = await oauthFlow.startInteractiveFlow();
+    if (!ok) {
+      log("error", "OAuth flow did not complete successfully.");
+      return;
+    }
+    log("info", "✅ Account added. Starting server...");
   }
 
   server.listen(PORT, HOST, () => {

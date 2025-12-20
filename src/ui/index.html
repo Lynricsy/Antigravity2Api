@@ -52,6 +52,13 @@
             授权成功后会自动写入 <code>auths/*.json</code>，并自动刷新账号列表。若你是在远程机器访问本服务，
             授权完成后浏览器可能会跳转到 <code>http://localhost:&lt;port&gt;/oauth-callback</code>，请把 <code>localhost:&lt;port&gt;</code> 改成当前服务地址后回车即可。
           </p>
+          <p class="hint">
+            或者：直接复制浏览器地址栏里的 <code>http://localhost:&lt;port&gt;/oauth-callback?...</code> 链接（或仅复制 <code>code</code>），粘贴到下面输入框提交即可。
+          </p>
+          <div class="row">
+            <input id="oauthPaste" class="input mono" type="text" placeholder="粘贴回调链接（含 code/state）或授权码 code" />
+            <button id="btnSubmitCallback" class="btn">提交</button>
+          </div>
         </div>
       </section>
 

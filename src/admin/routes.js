@@ -49,6 +49,12 @@ async function handleAdminRoute(req, parsedUrl, { authManager, config, logger } 
       return jsonResponse(200, { success: true, data });
     }
 
+    if (parsedUrl.pathname === "/admin/api/oauth/complete" && req.method === "POST") {
+      const body = await parseJsonBody(req);
+      const data = await oauth.completeOAuthFromUserInput({ body: body || {}, authManager });
+      return jsonResponse(200, { success: true, data });
+    }
+
     const statusMatch = parsedUrl.pathname.match(/^\/admin\/api\/oauth\/status\/([^/]+)$/);
     if (statusMatch && req.method === "GET") {
       const state = decodeURIComponent(statusMatch[1] || "");

@@ -235,69 +235,86 @@ class OAuthFlow {
       throw new Error("OAuthFlow requires authManager to save credentials");
     }
 
-    this.startCallbackServer().then((serverInfo) => {
-      const { port } = serverInfo;
-      let completed = false;
-      let rl;
+    return new Promise((resolve) => {
+      this.startCallbackServer()
+        .then((serverInfo) => {
+          const { port, server } = serverInfo;
+          let completed = false;
+          let rl;
 
-      const cleanup = () => {
-        if (completed) return;
-        completed = true;
-        if (rl) rl.close();
-        if (process.stdin.isTTY) {
-          try {
-            process.stdin.pause();
-          } catch (e) {}
-        }
-      };
-      this._notifyOAuthDone = cleanup;
+          const finish = (success) => {
+            if (completed) return;
+            completed = true;
+            if (rl) {
+              try {
+                rl.close();
+              } catch (e) {}
+            }
+            if (server) {
+              try {
+                server.close();
+              } catch (e) {}
+            }
+            if (process.stdin.isTTY) {
+              try {
+                process.stdin.pause();
+              } catch (e) {}
+            }
+            resolve(!!success);
+          };
 
-      const handleCode = async (code) => {
-        if (completed) return;
-        try {
-          const creds = await this.exchangeCode(code, port);
-          await this.authManager.addAccount(creds);
-          this.log("info", "✅ Authorization successful.");
-          cleanup();
-        } catch (err) {
-          this.log("error", `Failed to exchange code: ${err.message || err}`);
-        }
-      };
+          this._notifyOAuthDone = () => finish(true);
 
-      const authUrl = this.getAuthUrl(port);
-      this.log("info", `👉 Please open the following URL in your browser to authorize:\n${authUrl}\n`);
+          const handleCode = async (code) => {
+            if (completed) return;
+            try {
+              const creds = await this.exchangeCode(code, port);
+              await this.authManager.addAccount(creds);
+              this.log("info", "✅ Authorization successful.");
+              finish(true);
+            } catch (err) {
+              this.log("error", `Failed to exchange code: ${err.message || err}`);
+            }
+          };
 
-      if (process.platform === "win32") {
-        exec(`start "" "${authUrl}"`);
-      } else {
-        const openCommand = process.platform === "darwin" ? "open" : "xdg-open";
-        exec(`${openCommand} "${authUrl}"`);
-      }
+          const authUrl = this.getAuthUrl(port);
+          this.log("info", `👉 Please open the following URL in your browser to authorize:\n${authUrl}\n`);
 
-      rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      this.log("info", "ℹ️ 如在其他设备授权，请粘贴完整的回调链接并回车；或直接等待浏览器自动回调。");
-      rl.on("line", (line) => {
-        if (completed) return;
-        const trimmed = (line || "").trim();
-        if (!trimmed) {
-          this.log("info", "继续等待浏览器回调或粘贴链接...");
-          return;
-        }
-        try {
-          const url = new URL(trimmed);
-          const code = url.searchParams.get("code");
-          if (!code) {
-            this.log("warn", "未找到 code 参数，请粘贴完整的回调 URL。");
-            return;
+          if (process.platform === "win32") {
+            exec(`start "" "${authUrl}"`);
+          } else {
+            const openCommand = process.platform === "darwin" ? "open" : "xdg-open";
+            exec(`${openCommand} "${authUrl}"`);
           }
-          handleCode(code);
-        } catch (e) {
-          this.log("warn", "无效的 URL，请粘贴完整的回调 URL。");
-        }
-      });
+
+          rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          this.log("info", "ℹ️ 如在其他设备授权，请粘贴完整的回调链接并回车；或直接等待浏览器自动回调。");
+          rl.on("line", (line) => {
+            if (completed) return;
+            const trimmed = (line || "").trim();
+            if (!trimmed) {
+              this.log("info", "继续等待浏览器回调或粘贴链接...");
+              return;
+            }
+            try {
+              const url = new URL(trimmed);
+              const code = url.searchParams.get("code");
+              if (!code) {
+                this.log("warn", "未找到 code 参数，请粘贴完整的回调 URL。");
+                return;
+              }
+              handleCode(code);
+            } catch (e) {
+              this.log("warn", "无效的 URL，请粘贴完整的回调 URL。");
+            }
+          });
+        })
+        .catch((err) => {
+          this.log("error", `Failed to start OAuth callback server: ${err.message || err}`);
+          resolve(false);
+        });
     });
   }
 }
 
 module.exports = OAuthFlow;
-
