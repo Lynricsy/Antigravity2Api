@@ -1,0 +1,26 @@
+services:
+  antigravity2api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: antigravity2api
+    ports:
+      - "${AG2API_PORT:-3000}:${AG2API_PORT:-3000}"
+    environment:
+      # App config
+      AG2API_HOST: "${AG2API_HOST:-}"
+      AG2API_PORT: "${AG2API_PORT:-}"
+      AG2API_API_KEYS: "${AG2API_API_KEYS:-}"
+      AG2API_PROXY_ENABLED: "${AG2API_PROXY_ENABLED:-}"
+      AG2API_PROXY_URL: "${AG2API_PROXY_URL:-}"
+      AG2API_DEBUG: "${AG2API_DEBUG:-}"
+
+      # Optional: override OAuth client (otherwise uses built-in defaults)
+      # GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID:-}"
+      # GOOGLE_OAUTH_CLIENT_SECRET: "${GOOGLE_OAUTH_CLIENT_SECRET:-}"
+
+    volumes:
+      - ./auths:/app/auths
+      - ./log:/app/log
+
+    restart: unless-stopped
