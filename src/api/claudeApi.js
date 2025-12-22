@@ -182,10 +182,30 @@ class ClaudeApi {
       });
 
       if (!response.ok) {
+        const headers = headersToObject(response.headers);
+        let body = response.body;
+
+        // In debug mode, also log upstream non-2xx bodies (400/401/403/etc).
+        // We must not consume the body we return to the client, so prefer tee().
+        if (this.debugRequestResponse && response.body) {
+          try {
+            if (typeof response.body.tee === "function") {
+              const [logBranch, processBranch] = response.body.tee();
+              this.logStreamContent(logBranch, `Upstream Error Raw (Stream, HTTP ${response.status})`);
+              body = processBranch;
+            } else {
+              const errorText = await response.clone().text().catch(() => "");
+              if (errorText) this.log(`Upstream Error Body (HTTP ${response.status})`, errorText);
+            }
+          } catch (e) {
+            this.log("warn", `Failed to log upstream error body: ${e.message || e}`);
+          }
+        }
+
         return {
           status: response.status,
-          headers: headersToObject(response.headers),
-          body: response.body,
+          headers,
+          body,
         };
       }
 

@@ -5,6 +5,33 @@
  * 支持 thinking、签名、函数调用等场景
  */
 
+// ==================== tool_use.id -> thoughtSignature（跨 turn） ====================
+// 规范要求：如果模型响应里出现 thoughtSignature，下一轮发送历史记录时必须原样带回到对应的 part。
+// 但 Claude Code 下一次请求不会回传 `tool_use.signature`（非标准字段），
+// 所以需要代理进程内维护一份 tool_use.id -> thoughtSignature 的映射，并在转回 v1internal 时补回。
+const toolThoughtSignatures = new Map(); // tool_use.id -> thoughtSignature
+
+function isDebugEnabled() {
+  const raw = process.env.AG2API_DEBUG;
+  if (!raw) return false;
+  const v = String(raw).trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function rememberToolThoughtSignature(toolUseId, thoughtSignature) {
+  if (!toolUseId || !thoughtSignature) return;
+  const id = String(toolUseId);
+  const sig = String(thoughtSignature);
+  toolThoughtSignatures.set(id, sig);
+  if (isDebugEnabled()) console.log(`[ThoughtSignature] cached tool_use.id=${id} len=${sig.length}`);
+}
+
+function getToolThoughtSignature(toolUseId) {
+  if (!toolUseId) return null;
+  const id = String(toolUseId);
+  return toolThoughtSignatures.get(id) || null;
+}
+
 // ==================== 签名管理器 ====================
 class SignatureManager {
   constructor() {
@@ -334,6 +361,7 @@ class PartProcessor {
     // 根据官方文档：签名附加到 tool_use 块
     if (sigToUse) {
       toolUseBlock.signature = sigToUse;
+      rememberToolThoughtSignature(toolId, sigToUse);
     }
     
     this.state.startBlock(StreamingState.BLOCK_FUNCTION, toolUseBlock);
@@ -422,6 +450,7 @@ class NonStreamingProcessor {
       // 只使用 FC 自己的签名
       if (signature) {
         toolUseBlock.signature = signature;
+        rememberToolThoughtSignature(toolId, signature);
       }
       
       this.contentBlocks.push(toolUseBlock);
@@ -745,27 +774,46 @@ function transformClaudeRequestIn(claudeReq, projectId) {
       if (Array.isArray(msg.content)) {
         for (const item of msg.content) {
           if (item.type === "text") {
-            const text = item.text || "";
-            if (text !== "(no content)") {
-              clientContent.parts.push({ text: text });
-            }
+            const text = typeof item.text === "string" ? item.text : "";
+            if (!text || text === "(no content)") continue;
+            clientContent.parts.push({ text });
           } else if (item.type === "thinking") {
             // 根据官方文档：签名必须在收到签名的那个 part 上原样返回
-            const part = {
-              text: item.thinking || "",
-              thought: true,
-            };
+            // 重要：我们在 response 侧会用一个空的 Claude "thinking" block 来承载“空 text part 的 thoughtSignature”（Claude text 不支持 signature）。
+            // 这个 block 本质上是“空 text + signature”，不应当在 v1internal 中还原成 thought=true（否则会上游被当作 thinking block 校验，可能触发 400）。
+            const thinkingText = typeof item.thinking === "string" ? item.thinking : "";
+            const signature = typeof item.signature === "string" ? item.signature : "";
+
+            if (signature && thinkingText.length === 0) {
+              // 文本签名载体块：严格按官方参考行为合并回“前一个非空 text part”（绝不附着到 functionCall）。
+              for (let i = clientContent.parts.length - 1; i >= 0; i--) {
+                const p = clientContent.parts[i];
+                const canCarry =
+                  p &&
+                  p.thought !== true &&
+                  !p.thoughtSignature &&
+                  typeof p.text === "string" &&
+                  p.text.length > 0;
+                if (!canCarry) continue;
+                p.thoughtSignature = signature;
+                break;
+              }
+              continue;
+            }
+
+            // 避免请求侧发送空字符串字段（部分上游会直接 400）
+            if (thinkingText.length === 0) continue;
+
+            const part = { text: thinkingText, thought: true };
             // 如果 thinking 有 signature，直接附加到当前 part
-            if (item.signature) {
-              part.thoughtSignature = item.signature;
+            if (signature) {
+              part.thoughtSignature = signature;
             }
             clientContent.parts.push(part);
           } else if (item.type === "redacted_thinking") {
-            const part = {
-              text: item.data || "",
-              thought: true,
-            };
-            clientContent.parts.push(part);
+            const text = typeof item.data === "string" ? item.data : "";
+            if (!text) continue;
+            clientContent.parts.push({ text, thought: true });
           } else if (item.type === "image") {
             // Handle image
             const source = item.source || {};
@@ -789,9 +837,14 @@ function transformClaudeRequestIn(claudeReq, projectId) {
             if (item.id && item.name) {
               toolIdToName.set(item.id, item.name);
             }
-            // 如果 tool_use 有 signature，直接附加到当前 functionCall part
-            if (item.signature) {
-              fcPart.thoughtSignature = item.signature;
+            // 如果 tool_use 有 signature（少数客户端会回传），直接使用；
+            // 否则从缓存补回（Claude Code 不会回传 tool_use.signature）。
+            const sig = item.signature || getToolThoughtSignature(item.id);
+            if (sig) {
+              fcPart.thoughtSignature = sig;
+              if (!item.signature && isDebugEnabled()) {
+                console.log(`[ThoughtSignature] injected tool_use.id=${item.id}`);
+              }
             }
             clientContent.parts.push(fcPart);
           } else if (item.type === "tool_result") {
@@ -813,10 +866,13 @@ function transformClaudeRequestIn(claudeReq, projectId) {
           }
         }
       } else if (typeof msg.content === "string") {
-        clientContent.parts.push({ text: msg.content });
+        const text = msg.content;
+        if (text) clientContent.parts.push({ text });
       }
       
-      contents.push(clientContent);
+      if (clientContent.parts.length > 0) {
+        contents.push(clientContent);
+      }
     }
   }
 
