@@ -203,6 +203,29 @@ h2 {
   text-align: center;
 }
 
+.hidden {
+  display: none;
+}
+
+.update-banner {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.update-banner-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 code {
   font-family: var(--mono);
   font-size: 12px;

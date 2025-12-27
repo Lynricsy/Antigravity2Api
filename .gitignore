@@ -1,5 +1,6 @@
 .env
 .claude
+.serena
 auths/
 log/
 node_modules/

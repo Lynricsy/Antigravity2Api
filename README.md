@@ -70,6 +70,8 @@ AG2API_LOG_RETENTION_DAYS=3
 - `AG2API_PROXY_URL`：代理地址
 - `AG2API_DEBUG`：是否开启 debug（true/false）
 - `AG2API_LOG_RETENTION_DAYS`：日志保留天数（默认 3；设为 0 表示不自动清理）
+- `AG2API_UPDATE_REPO`：管理界面版本检查的 GitHub 仓库（默认 `znlsl/antigravity2api`）
+- `AG2API_UPDATE_BRANCH`：管理界面版本检查的分支（默认 `main`）
 
 Google OAuth Client（可选覆盖）：
 

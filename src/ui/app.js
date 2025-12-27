@@ -1,17 +1,22 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  const els = {
-    apiKey: $("apiKey"),
-    btnSaveKey: $("btnSaveKey"),
-    btnClearKey: $("btnClearKey"),
-    keyStatus: $("keyStatus"),
-    btnReload: $("btnReload"),
-    btnAdd: $("btnAdd"),
-    oauthStatus: $("oauthStatus"),
-    oauthUrl: $("oauthUrl"),
-    oauthState: $("oauthState"),
-    btnCopyUrl: $("btnCopyUrl"),
+	  const els = {
+	    apiKey: $("apiKey"),
+	    btnSaveKey: $("btnSaveKey"),
+	    btnClearKey: $("btnClearKey"),
+	    keyStatus: $("keyStatus"),
+	    btnReload: $("btnReload"),
+	    btnAdd: $("btnAdd"),
+	    versionInfo: $("versionInfo"),
+	    updateBanner: $("updateBanner"),
+	    updateText: $("updateText"),
+	    updateLink: $("updateLink"),
+	    updateDismiss: $("updateDismiss"),
+	    oauthStatus: $("oauthStatus"),
+	    oauthUrl: $("oauthUrl"),
+	    oauthState: $("oauthState"),
+	    btnCopyUrl: $("btnCopyUrl"),
     oauthPaste: $("oauthPaste"),
     btnSubmitCallback: $("btnSubmitCallback"),
     accountsBody: $("accountsBody"),
@@ -102,8 +107,82 @@
       err.data = data;
       throw err;
     }
-    return data;
-  }
+	    return data;
+	  }
+
+	  function normalizeVersion(raw) {
+	    return String(raw || "")
+	      .trim()
+	      .replace(/^v/i, "");
+	  }
+
+	  function compareVersions(a, b) {
+	    const va = normalizeVersion(a);
+	    const vb = normalizeVersion(b);
+
+	    const dateRe = /^\d{4}\.\d{2}\.\d{2}-t\d{6}$/;
+	    if (dateRe.test(va) && dateRe.test(vb)) {
+	      if (va > vb) return 1;
+	      if (va < vb) return -1;
+	      return 0;
+	    }
+
+	    // Fallback: basic semver-ish numeric compare (major.minor.patch).
+	    const pa = va.split(".").map((x) => Number.parseInt(x, 10));
+	    const pb = vb.split(".").map((x) => Number.parseInt(x, 10));
+	    if (pa.length < 1 || pb.length < 1 || pa.some(Number.isNaN) || pb.some(Number.isNaN)) return 0;
+	    const len = Math.max(pa.length, pb.length);
+	    for (let i = 0; i < len; i++) {
+	      const ai = pa[i] ?? 0;
+	      const bi = pb[i] ?? 0;
+	      if (ai > bi) return 1;
+	      if (ai < bi) return -1;
+	    }
+	    return 0;
+	  }
+
+	  function showUpdateBanner({ text, link, updateId }) {
+	    if (!els.updateBanner) return;
+	    const dismissed = localStorage.getItem("update_dismissed_id") || "";
+	    if (dismissed && updateId && dismissed === updateId) return;
+
+	    if (els.updateText) els.updateText.textContent = text || "发现更新";
+	    if (els.updateLink) els.updateLink.href = link || "#";
+
+	    els.updateBanner.classList.remove("hidden");
+
+	    if (els.updateDismiss) {
+	      els.updateDismiss.onclick = () => {
+	        if (updateId) localStorage.setItem("update_dismissed_id", updateId);
+	        els.updateBanner.classList.add("hidden");
+	      };
+	    }
+	  }
+
+	  async function initVersionCheck() {
+	    if (!els.versionInfo) return;
+	    try {
+	      const meta = await apiFetch("/ui/meta.json", { method: "GET" });
+	      const name = meta?.name || "antigravity2api";
+	      const localVersion = meta?.version || "0.0.0";
+	      const homepage = meta?.homepage || "";
+
+	      els.versionInfo.textContent = `${name} v${localVersion}`;
+
+	      const remote = await apiFetch("/ui/update.json", { method: "GET" });
+	      const remoteVersion = remote?.version;
+	      if (remoteVersion && compareVersions(remoteVersion, localVersion) > 0) {
+	        const link = homepage ? `${homepage}/commits/${remote?.branch || "main"}` : "#";
+	        showUpdateBanner({
+	          text: `发现新版本 v${normalizeVersion(remoteVersion)}（当前 v${normalizeVersion(localVersion)}）`,
+	          link,
+	          updateId: String(remoteVersion),
+	        });
+	      }
+	    } catch (e) {
+	      // ignore update check errors
+	    }
+	  }
 
   function formatExpiry(expiryDateMs) {
     if (!expiryDateMs) return "-";
@@ -384,7 +463,8 @@
     });
   }
 
-  loadApiKey();
-  bindEvents();
-  refreshAccounts();
-})();
+	  loadApiKey();
+	  bindEvents();
+	  refreshAccounts();
+	  initVersionCheck();
+	})();
